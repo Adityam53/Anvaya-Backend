@@ -4,12 +4,12 @@ const commentSchema = new mongoose.Schema({
   lead: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Lead",
-    requirec: [true, "Lead reference is required."],
+    required: [true, "Lead reference is required."],
   },
   author: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "SalesAgent",
-    requirec: [true, "Author reference is required."],
+    required: [true, "Author reference is required."],
   },
   commentText: {
     type: String,
