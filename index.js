@@ -115,7 +115,7 @@ const readAllLeads = async (filters = {}) => {
     if (filters.tags) query.tags = { $in: filters.tags.split(",") };
 
     const allLeads = await Lead.find(query)
-      .populate("salesAgent", "name")
+      .populate("salesAgent", "name email")
       .select(
         "name source salesAgent status tags timeToClose priority createdAt"
       );
@@ -144,6 +144,37 @@ app.get("/leads", async (req, res) => {
   } catch (error) {
     console.error("Failed to fetch leads:", error);
     res.status(500).json({ error: "An error occurred while fetching leads" });
+  }
+});
+
+const readLeadById = async (leadId) => {
+  try {
+    const lead = await Lead.findById(leadId)
+      .populate("salesAgent", "name email")
+      .select(
+        "name source salesAgent status tags timeToClose priority createdAt"
+      );
+    return lead;
+  } catch (error) {
+    throw error;
+  }
+};
+
+app.get("/leads/:id", async (req, res) => {
+  try {
+    const leadId = req.params.id;
+    const lead = await readLeadById(leadId);
+
+    if (!lead) {
+      return res.status(404).json({ error: "Lead not found" });
+    }
+
+    res.status(200).json(lead);
+  } catch (error) {
+    console.error("Error fetching lead by ID:", error);
+    res
+      .status(500)
+      .json({ error: "An error occurred while fetching the lead" });
   }
 });
 
