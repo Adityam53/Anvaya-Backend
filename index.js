@@ -76,6 +76,32 @@ app.get("/agents", async (req, res) => {
   }
 });
 
+const readAgentById = async (agentId) => {
+  try {
+    const agent = await SalesAgent.findById(agentId);
+    return agent;
+  } catch (error) {
+    throw error;
+  }
+};
+
+app.get("/agents/:id", async (req, res) => {
+  try {
+    const agentId = req.params.id;
+    const agent = await readAgentById(agentId);
+
+    if (!agent) {
+      return res.status(404).json({ error: "Agent not found" });
+    }
+
+    res.status(200).json(agent);
+  } catch (error) {
+    console.error("Error fetching agent by ID:", error);
+    res
+      .status(500)
+      .json({ error: "An error occurred while fetching the agent" });
+  }
+});
 const createLead = async (newLead) => {
   try {
     if (newLead.status === "Closed") {
