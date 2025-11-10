@@ -102,6 +102,7 @@ app.get("/agents/:id", async (req, res) => {
       .json({ error: "An error occurred while fetching the agent" });
   }
 });
+
 const createLead = async (newLead) => {
   try {
     if (newLead.status === "Closed") {
@@ -173,6 +174,37 @@ app.get("/leads", async (req, res) => {
   }
 });
 
+const readLeadsByAgentId = async (agentId) => {
+  try {
+    const leads = await Lead.find({ salesAgent: agentId }).populate(
+      "salesAgent",
+      "name email"
+    );
+    return leads;
+  } catch (error) {
+    throw error;
+  }
+};
+
+app.get("/leads/agent/:agentId", async (req, res) => {
+  try {
+    const agentId = req.params.id;
+    const lead = await readLeadsByAgentId(agentId);
+
+    if (!lead) {
+      return res
+        .status(404)
+        .json({ error: "No assigned leads found for this agent." });
+    }
+
+    res.status(200).json(lead);
+  } catch (error) {
+    console.error("Error fetching lead by AgentID:", error);
+    res
+      .status(500)
+      .json({ error: "An error occurred while fetching the lead for agent" });
+  }
+});
 const readLeadById = async (leadId) => {
   try {
     const lead = await Lead.findById(leadId)
