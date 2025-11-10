@@ -188,7 +188,7 @@ const readLeadsByAgentId = async (agentId) => {
 
 app.get("/leads/agent/:agentId", async (req, res) => {
   try {
-    const agentId = req.params.id;
+    const agentId = req.params.agentId;
     const lead = await readLeadsByAgentId(agentId);
 
     if (!lead) {
@@ -205,6 +205,7 @@ app.get("/leads/agent/:agentId", async (req, res) => {
       .json({ error: "An error occurred while fetching the lead for agent" });
   }
 });
+
 const readLeadById = async (leadId) => {
   try {
     const lead = await Lead.findById(leadId)
