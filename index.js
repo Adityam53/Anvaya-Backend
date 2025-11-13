@@ -174,12 +174,14 @@ app.get("/leads", async (req, res) => {
   }
 });
 
-const readLeadsByAgentId = async (agentId) => {
+const readLeadsByAgentId = async (agentId, filters = {}) => {
   try {
-    const leads = await Lead.find({ salesAgent: agentId }).populate(
-      "salesAgent",
-      "name email"
-    );
+    const query = { salesAgent: agentId };
+
+    if (filters.status) query.status = filters.status;
+    if (filters.priority) query.priority = filters.priority;
+
+    const leads = await Lead.find(query).populate("salesAgent", "name email");
     return leads;
   } catch (error) {
     throw error;
@@ -189,7 +191,13 @@ const readLeadsByAgentId = async (agentId) => {
 app.get("/leads/agent/:agentId", async (req, res) => {
   try {
     const agentId = req.params.agentId;
-    const lead = await readLeadsByAgentId(agentId);
+
+    const filters = {
+      status: req.query.status,
+      priority: req.query.priority,
+    };
+
+    const lead = await readLeadsByAgentId(agentId, filters);
 
     if (!lead) {
       return res
