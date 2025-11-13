@@ -138,7 +138,7 @@ const readAllLeads = async (filters = {}) => {
 
     if (filters.salesAgent) query.salesAgent = filters.salesAgent;
     if (filters.status) query.status = filters.status;
-    if (filters.source) query.source = filters.source;
+    if (filters.priority) query.priority = filters.priority;
     if (filters.tags) query.tags = { $in: filters.tags.split(",") };
 
     const allLeads = await Lead.find(query)
@@ -158,7 +158,7 @@ app.get("/leads", async (req, res) => {
       salesAgent: req.query.salesAgent,
       status: req.query.status,
       tags: req.query.tags,
-      source: req.query.source,
+      priority: req.query.priority,
     };
 
     const allLeads = await readAllLeads(filters);
