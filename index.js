@@ -335,7 +335,7 @@ app.get("/leads/:id/comments", async (req, res) => {
 const createComment = async (newComment) => {
   try {
     const comment = new Comment(newComment);
-    const savedComment = comment.save();
+    const savedComment = await comment.save();
     return savedComment;
   } catch (error) {
     throw error;
