@@ -342,7 +342,7 @@ const createComment = async (newComment) => {
   }
 };
 
-app.post("/:id/comments", async (req, res) => {
+app.post("/leads/:id/comments", async (req, res) => {
   try {
     const savedComment = await createComment(req.body);
     console.log(savedComment);
