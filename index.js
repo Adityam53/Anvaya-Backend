@@ -105,7 +105,7 @@ app.get("/agents/:id", async (req, res) => {
 
 const deleteAgentById = async (agentId) => {
   try {
-    const deleteAgent = await SalesAgent.findById(agentId);
+    const deleteAgent = await SalesAgent.findByIdAndDelete(agentId);
     return deleteAgent;
   } catch (error) {
     throw error;
