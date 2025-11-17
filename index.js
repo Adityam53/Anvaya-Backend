@@ -103,6 +103,30 @@ app.get("/agents/:id", async (req, res) => {
   }
 });
 
+const deleteAgentById = async (agentId) => {
+  try {
+    const deleteAgent = await SalesAgent.findById(agentId);
+    return deleteAgent;
+  } catch (error) {
+    throw error;
+  }
+};
+
+app.delete("/agents/:id", async (req, res) => {
+  try {
+    const deleteAgent = await deleteAgentById(req.params.id);
+
+    if (!deleteAgent) {
+      return res.status(404).json({ error: "Agent not found" });
+    }
+
+    res.status(200).json(deleteAgent);
+  } catch (error) {
+    console.error("Error deleting agentId", error);
+    res.status(500).json({ error: "An error occurred while deleting agent." });
+  }
+});
+
 const createLead = async (newLead) => {
   try {
     if (newLead.status === "Closed") {
