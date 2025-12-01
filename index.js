@@ -444,13 +444,8 @@ app.get("/report/last-week", async (req, res) => {
   try {
     const recentClosedLeads = await readRecentClosedDeals();
 
-    if (recentClosedLeads.length > 0) {
-      res.status(200).json(recentClosedLeads);
-    } else {
-      res
-        .status(404)
-        .json({ error: "No leads closed in the last seven days." });
-    }
+    // Always return 200 with an array (empty or not)
+    res.status(200).json(recentClosedLeads || []);
   } catch (error) {
     console.error("Error fetching recent closed leads:", error);
     res
