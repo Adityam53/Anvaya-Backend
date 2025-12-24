@@ -419,7 +419,7 @@ app.get("/tags", async (req, res) => {
     }
   } catch (error) {
     console.error("Error in fetching tags.");
-    res.status(500).json({ error: "Failed to fetch atgs." });
+    res.status(500).json({ error: "Failed to fetch tags." });
   }
 });
 
