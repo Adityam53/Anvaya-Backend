@@ -6,70 +6,78 @@ const SalesAgent = require("./Models/salesAgent.models");
 const Tag = require("./Models/tag.models");
 const express = require("express");
 const cors = require("cors");
+const mongoose = require("mongoose"); // Imported to check connection state
 
 const corsOptions = {
   origin: "*",
   credentials: true,
-  optionSuccessStatus: 200,
+  optionsSuccessStatus: 200, // Fixed typo
 };
 
 const app = express();
 app.use(express.json());
 app.use(cors(corsOptions));
 
-initializeDatabase();
+// SERVERLESS MIDDLWARE: Ensures DB is connected BEFORE processing any route
+const ensureDbConnected = async (req, res, next) => {
+  try {
+    // mongoose.connection.readyState: 1 means connected, 2 means connecting
+    if (
+      mongoose.connection.readyState !== 1 &&
+      mongoose.connection.readyState !== 2
+    ) {
+      console.log("Cold start detected: Initializing database connection...");
+      await initializeDatabase();
+    }
+    next();
+  } catch (error) {
+    console.error(
+      "Database connection failed during request processing:",
+      error,
+    );
+    res.status(500).json({ error: "Database connection failed" });
+  }
+};
+
+// Apply the database connection guard to all incoming requests
+app.use(ensureDbConnected);
+
+/* ==================== AGENTS ROUTES ==================== */
 
 const createSalesAgent = async (newAgent) => {
-  try {
-    const agent = new SalesAgent(newAgent);
-    const savedAgent = await agent.save();
-    return savedAgent;
-  } catch (error) {
-    throw error;
-  }
+  const agent = new SalesAgent(newAgent);
+  return await agent.save();
 };
 
 app.post("/agents", async (req, res) => {
   try {
     const savedAgent = await createSalesAgent(req.body);
-    console.log(savedAgent);
-
-    res.status(201).json({ message: "New Sales agent created successfully!" });
+    res
+      .status(201)
+      .json({ message: "New Sales agent created successfully!", savedAgent });
   } catch (error) {
     console.error("Error in creating a new sales agent.", error);
-
     if (error.name === "ValidationError") {
       return res
         .status(400)
         .json({ error: "Invalid input or missing required fields." });
     }
-
     if (error.code === 11000 && error.keyPattern?.email) {
       return res.status(409).json({ error: "Email already exists." });
     }
-
     res.status(500).json({ error: "Failed to create new agent." });
   }
 });
 
 const readAllAgents = async () => {
-  try {
-    const allAgents = await SalesAgent.find();
-    return allAgents;
-  } catch (error) {
-    throw error;
-  }
+  return await SalesAgent.find();
 };
 
 app.get("/agents", async (req, res) => {
   try {
     const allAgents = await readAllAgents();
-
-    if (allAgents.length > 0) {
-      res.status(200).json(allAgents);
-    } else {
-      res.status(404).json({ error: "No leads found" });
-    }
+    // FIXED: Return empty array with 200 status instead of 404
+    res.status(200).json(allAgents);
   } catch (error) {
     console.error("Error in fetching agents", error);
     res.status(500).json({ error: "Failed to fetch agents!" });
@@ -77,23 +85,15 @@ app.get("/agents", async (req, res) => {
 });
 
 const readAgentById = async (agentId) => {
-  try {
-    const agent = await SalesAgent.findById(agentId);
-    return agent;
-  } catch (error) {
-    throw error;
-  }
+  return await SalesAgent.findById(agentId);
 };
 
 app.get("/agents/:id", async (req, res) => {
   try {
-    const agentId = req.params.id;
-    const agent = await readAgentById(agentId);
-
+    const agent = await readAgentById(req.params.id);
     if (!agent) {
       return res.status(404).json({ error: "Agent not found" });
     }
-
     res.status(200).json(agent);
   } catch (error) {
     console.error("Error fetching agent by ID:", error);
@@ -104,22 +104,15 @@ app.get("/agents/:id", async (req, res) => {
 });
 
 const deleteAgentById = async (agentId) => {
-  try {
-    const deleteAgent = await SalesAgent.findByIdAndDelete(agentId);
-    return deleteAgent;
-  } catch (error) {
-    throw error;
-  }
+  return await SalesAgent.findByIdAndDelete(agentId);
 };
 
 app.delete("/agents/:id", async (req, res) => {
   try {
     const deleteAgent = await deleteAgentById(req.params.id);
-
     if (!deleteAgent) {
       return res.status(404).json({ error: "Agent not found" });
     }
-
     res.status(200).json(deleteAgent);
   } catch (error) {
     console.error("Error deleting agentId", error);
@@ -128,52 +121,37 @@ app.delete("/agents/:id", async (req, res) => {
 });
 
 const createLead = async (newLead) => {
-  try {
-    if (newLead.status === "Closed") {
-      newLead.closedAt = new Date();
-    }
-
-    const lead = new Lead(newLead);
-    const savedLead = await lead.save();
-    return savedLead;
-  } catch (error) {
-    throw error;
+  if (newLead.status === "Closed") {
+    newLead.closedAt = new Date();
   }
+  const lead = new Lead(newLead);
+  return await lead.save();
 };
 
 app.post("/leads", async (req, res) => {
   try {
     const savedLead = await createLead(req.body);
-    console.log(savedLead);
     res
       .status(201)
       .json({ message: "New Lead created successfully!", savedLead });
   } catch (error) {
-    console.log("Error in creating a new lead", error);
+    console.error("Error in creating a new lead", error);
     res.status(500).json({ error: "Failed to create new lead." });
   }
 });
 
-//fetch all the leads with filters using mongodb queries
-
 const readAllLeads = async (filters = {}) => {
-  try {
-    const query = {};
+  const query = {};
+  if (filters.salesAgent) query.salesAgent = filters.salesAgent;
+  if (filters.status) query.status = filters.status;
+  if (filters.priority) query.priority = filters.priority;
+  if (filters.tags) query.tags = { $in: filters.tags.split(",") };
 
-    if (filters.salesAgent) query.salesAgent = filters.salesAgent;
-    if (filters.status) query.status = filters.status;
-    if (filters.priority) query.priority = filters.priority;
-    if (filters.tags) query.tags = { $in: filters.tags.split(",") };
-
-    const allLeads = await Lead.find(query)
-      .populate("salesAgent", "name email")
-      .select(
-        "name source salesAgent status tags timeToClose priority createdAt"
-      );
-    return allLeads;
-  } catch (error) {
-    throw error;
-  }
+  return await Lead.find(query)
+    .populate("salesAgent", "name email")
+    .select(
+      "name source salesAgent status tags timeToClose priority createdAt",
+    );
 };
 
 app.get("/leads", async (req, res) => {
@@ -184,14 +162,8 @@ app.get("/leads", async (req, res) => {
       tags: req.query.tags,
       priority: req.query.priority,
     };
-
     const allLeads = await readAllLeads(filters);
-
-    if (allLeads.length > 0) {
-      res.status(200).json(allLeads);
-    } else {
-      res.status(404).json({ error: "No leads found" });
-    }
+    res.status(200).json(allLeads);
   } catch (error) {
     console.error("Failed to fetch leads:", error);
     res.status(500).json({ error: "An error occurred while fetching leads" });
@@ -199,37 +171,21 @@ app.get("/leads", async (req, res) => {
 });
 
 const readLeadsByAgentId = async (agentId, filters = {}) => {
-  try {
-    const query = { salesAgent: agentId };
+  const query = { salesAgent: agentId };
+  if (filters.status) query.status = filters.status;
+  if (filters.priority) query.priority = filters.priority;
 
-    if (filters.status) query.status = filters.status;
-    if (filters.priority) query.priority = filters.priority;
-
-    const leads = await Lead.find(query).populate("salesAgent", "name email");
-    return leads;
-  } catch (error) {
-    throw error;
-  }
+  return await Lead.find(query).populate("salesAgent", "name email");
 };
 
 app.get("/leads/agent/:agentId", async (req, res) => {
   try {
-    const agentId = req.params.agentId;
-
     const filters = {
       status: req.query.status,
       priority: req.query.priority,
     };
-
-    const lead = await readLeadsByAgentId(agentId, filters);
-
-    if (!lead) {
-      return res
-        .status(404)
-        .json({ error: "No assigned leads found for this agent." });
-    }
-
-    res.status(200).json(lead);
+    const leads = await readLeadsByAgentId(req.params.agentId, filters);
+    res.status(200).json(leads);
   } catch (error) {
     console.error("Error fetching lead by AgentID:", error);
     res
@@ -239,27 +195,19 @@ app.get("/leads/agent/:agentId", async (req, res) => {
 });
 
 const readLeadById = async (leadId) => {
-  try {
-    const lead = await Lead.findById(leadId)
-      .populate("salesAgent", "name email")
-      .select(
-        "name source salesAgent status tags timeToClose priority createdAt"
-      );
-    return lead;
-  } catch (error) {
-    throw error;
-  }
+  return await Lead.findById(leadId)
+    .populate("salesAgent", "name email")
+    .select(
+      "name source salesAgent status tags timeToClose priority createdAt",
+    );
 };
 
 app.get("/leads/:id", async (req, res) => {
   try {
-    const leadId = req.params.id;
-    const lead = await readLeadById(leadId);
-
+    const lead = await readLeadById(req.params.id);
     if (!lead) {
       return res.status(404).json({ error: "Lead not found" });
     }
-
     res.status(200).json(lead);
   } catch (error) {
     console.error("Error fetching lead by ID:", error);
@@ -273,23 +221,15 @@ const updateLeadsById = async (leadId, leadData) => {
   if (leadData.status === "Closed") {
     leadData.closedAt = new Date();
   }
-  try {
-    const updatedLead = await Lead.findByIdAndUpdate(leadId, leadData, {
-      new: true,
-      runValidators: true,
-    });
-    return updatedLead;
-  } catch (error) {
-    throw error;
-  }
+  return await Lead.findByIdAndUpdate(leadId, leadData, {
+    new: true,
+    runValidators: true,
+  });
 };
 
 app.put("/leads/:id", async (req, res) => {
   try {
-    const leadId = req.params.id;
-    const leadData = req.body;
-    console.log("body reached", leadData);
-    const updatedLead = await updateLeadsById(leadId, leadData);
+    const updatedLead = await updateLeadsById(req.params.id, req.body);
     if (!updatedLead) {
       return res.status(404).json({ error: "Lead not found" });
     }
@@ -303,25 +243,16 @@ app.put("/leads/:id", async (req, res) => {
 });
 
 const deleteLeadById = async (leadId) => {
-  try {
-    const deletedLead = await Lead.findByIdAndDelete(leadId);
-    return deletedLead;
-  } catch (error) {
-    throw error;
-  }
+  return await Lead.findByIdAndDelete(leadId);
 };
 
 app.delete("/leads/:id", async (req, res) => {
   try {
     const deletedLead = await deleteLeadById(req.params.id);
-
     if (!deletedLead) {
-      res.status(404).json({ error: "Lead not found" });
-    } else {
-      res
-        .status(200)
-        .json({ message: "Lead deleted successfully", deletedLead });
+      return res.status(404).json({ error: "Lead not found" }); // Added explicit return
     }
+    res.status(200).json({ message: "Lead deleted successfully", deletedLead });
   } catch (error) {
     console.error("Error in deleting lead", error);
     res
@@ -331,25 +262,15 @@ app.delete("/leads/:id", async (req, res) => {
 });
 
 const readAllComments = async (leadId) => {
-  try {
-    const allComments = await Comment.find({ lead: leadId })
-      .populate("lead", "name ")
-      .populate("author", "name email");
-    return allComments;
-  } catch (error) {
-    throw error;
-  }
+  return await Comment.find({ lead: leadId })
+    .populate("lead", "name")
+    .populate("author", "name email");
 };
 
 app.get("/leads/:id/comments", async (req, res) => {
   try {
-    const leadId = req.params.id;
-    const allComments = await readAllComments(leadId);
-    if (allComments.length > 0) {
-      res.json(allComments);
-    } else {
-      res.status(404).json({ error: "No comments found for this lead ID." });
-    }
+    const allComments = await readAllComments(req.params.id);
+    res.status(200).json(allComments); // Fixed empty state handler to be standard 200
   } catch (error) {
     console.error("Failed to fetch data", error);
     res.status(500).json({ error: "An error occured while fetching comments" });
@@ -357,43 +278,33 @@ app.get("/leads/:id/comments", async (req, res) => {
 });
 
 const createComment = async (newComment) => {
-  try {
-    const comment = new Comment(newComment);
-    const savedComment = await comment.save();
-    return savedComment;
-  } catch (error) {
-    throw error;
-  }
+  const comment = new Comment(newComment);
+  return await comment.save();
 };
 
 app.post("/leads/:id/comments", async (req, res) => {
   try {
     const savedComment = await createComment(req.body);
-    console.log(savedComment);
     res
       .status(201)
       .json({ message: "Comment added successfully!", savedComment });
   } catch (error) {
-    console.log("Error in adding comment", error);
-    res.status(404).json({ error: "Lead with the given ID not found." });
+    console.error("Error in adding comment", error);
+    res.status(500).json({
+      error: "Failed to add comment. Make sure Lead/Author IDs are correct.",
+    });
   }
 });
 
 const createTags = async (newTag) => {
-  try {
-    const tag = new Tag(newTag);
-    const savedTag = await tag.save();
-    return savedTag;
-  } catch (error) {
-    throw error;
-  }
+  const tag = new Tag(newTag);
+  return await tag.save();
 };
 
 app.post("/tags", async (req, res) => {
   try {
     const tag = await createTags(req.body);
-    console.log(tag);
-    res.status(200).json({ message: "Tag created successfully!" });
+    res.status(200).json({ message: "Tag created successfully!", tag });
   } catch (error) {
     console.error("Error in creating tag.", error);
     res.status(500).json({ error: "Failed to create new tag." });
@@ -401,22 +312,13 @@ app.post("/tags", async (req, res) => {
 });
 
 const readAllTags = async () => {
-  try {
-    const allTags = await Tag.find();
-    return allTags;
-  } catch (error) {
-    throw error;
-  }
+  return await Tag.find();
 };
 
 app.get("/tags", async (req, res) => {
   try {
     const tags = await readAllTags();
-    if (tags.length > 0) {
-      res.status(200).json(tags);
-    } else {
-      res.status(404).json({ error: "Tags not found." });
-    }
+    res.status(200).json(tags); // Fixed empty state handler
   } catch (error) {
     console.error("Error in fetching tags.");
     res.status(500).json({ error: "Failed to fetch tags." });
@@ -424,27 +326,20 @@ app.get("/tags", async (req, res) => {
 });
 
 const readRecentClosedDeals = async () => {
-  try {
-    const sevenDayAgo = new Date();
-    sevenDayAgo.setDate(sevenDayAgo.getDate() - 7);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    const recentClosedLeads = await Lead.find({
-      status: "Closed",
-      closedAt: { $gte: sevenDayAgo },
-    })
-      .populate("salesAgent", "name email")
-      .select("name source salesAgent status closedAt priority");
-    return recentClosedLeads;
-  } catch (error) {
-    throw error;
-  }
+  return await Lead.find({
+    status: "Closed",
+    closedAt: { $gte: sevenDaysAgo },
+  })
+    .populate("salesAgent", "name email")
+    .select("name source salesAgent status closedAt priority");
 };
 
 app.get("/report/last-week", async (req, res) => {
   try {
     const recentClosedLeads = await readRecentClosedDeals();
-
-    // Always return 200 with an array (empty or not)
     res.status(200).json(recentClosedLeads || []);
   } catch (error) {
     console.error("Error fetching recent closed leads:", error);
@@ -455,27 +350,17 @@ app.get("/report/last-week", async (req, res) => {
 });
 
 const readLeadsInPipeline = async () => {
-  try {
-    const totalLeadsInPipeline = await Lead.find({ status: { $ne: "Closed" } });
-    return totalLeadsInPipeline;
-  } catch (error) {
-    throw error;
-  }
+  return await Lead.find({ status: { $ne: "Closed" } });
 };
 
 app.get("/report/pipeline", async (req, res) => {
   try {
     const totalLeadsInPipeline = await readLeadsInPipeline();
-
-    if (totalLeadsInPipeline.length > 0) {
-      res.status(200).json({
-        totalLeadsInPipeline: totalLeadsInPipeline.length,
-      });
-    } else {
-      res.status(404).json({ error: "No Leads found in pipeline." });
-    }
+    res.status(200).json({
+      totalLeadsInPipeline: totalLeadsInPipeline.length,
+    });
   } catch (error) {
-    console.error("Error fetching leads in pipeline");
+    console.error("Error fetching leads in pipeline", error);
     res
       .status(500)
       .json({ error: "An error occurred while fetching leads in pipeline." });
@@ -483,57 +368,38 @@ app.get("/report/pipeline", async (req, res) => {
 });
 
 const readClosedLeadsByAgent = async () => {
-  try {
-    const closedLeadsByAgent = await Lead.aggregate([
-      { $match: { status: "Closed" } },
-      {
-        $group: {
-          _id: "$salesAgent",
-          closedLeadsCount: { $sum: 1 },
-        },
+  return await Lead.aggregate([
+    { $match: { status: "Closed" } },
+    {
+      $group: {
+        _id: "$salesAgent",
+        closedLeadsCount: { $sum: 1 },
       },
-      {
-        $lookup: {
-          from: "salesagents",
-          localField: "_id",
-          foreignField: "_id",
-          as: "salesAgentDetails",
-        },
+    },
+    {
+      $lookup: {
+        from: "salesagents", // Ensure this collection name perfectly matches your MongoDB collection (usually lowercase plural)
+        localField: "_id",
+        foreignField: "_id",
+        as: "salesAgentDetails",
       },
-      {
-        $unwind: "$salesAgentDetails",
+    },
+    { $unwind: "$salesAgentDetails" },
+    {
+      $project: {
+        _id: 0,
+        salesAgentId: "$salesAgentDetails._id",
+        salesAgentName: "$salesAgentDetails.name",
+        closedLeadsCount: 1,
       },
-      {
-        $project: {
-          _id: 0,
-          salesAgentId: "$salesAgentDetails._id",
-          salesAgentName: "$salesAgentDetails.name",
-          closedLeadsCount: 1,
-        },
-      },
-    ]);
-
-    return closedLeadsByAgent;
-  } catch (error) {
-    throw error;
-  }
+    },
+  ]);
 };
 
 app.get("/report/closed-by-agent", async (req, res) => {
   try {
     const closedLeadsByAgent = await readClosedLeadsByAgent();
-
-    if (closedLeadsByAgent.length > 0) {
-      const formatted = closedLeadsByAgent.map((item) => ({
-        salesAgentId: item.salesAgentId,
-        salesAgentName: item.salesAgentName,
-        closedLeadsCount: item.closedLeadsCount,
-      }));
-
-      res.status(200).send(formatted);
-    } else {
-      res.status(404).json({ error: "No closed leads found" });
-    }
+    res.status(200).json(closedLeadsByAgent);
   } catch (error) {
     console.error("Error in fetching closed leads by agent", error);
     res.status(500).json({ error: "Failed to fetch closed leads by agent" });
