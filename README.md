@@ -109,7 +109,7 @@ Built using:
 ## Clone Repository
 
 ```bash
-git clone <r>
+git clone <https://github.com/Adityam53/Anvaya-Backend.git>
 cd anvaya-crm-backend
 ```
 
