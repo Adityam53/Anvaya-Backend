@@ -49,7 +49,7 @@ const leadSchema = new mongoose.Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 // Middleware to update the `updatedAt` field on each save

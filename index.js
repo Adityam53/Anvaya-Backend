@@ -325,6 +325,10 @@ app.get("/tags", async (req, res) => {
   }
 });
 
+/* ==========================================================================
+   ANALYTICS CONSTANTS
+   ========================================================================== */
+
 const PIPELINE_STATUSES = [
   "New",
   "Contacted",
@@ -336,11 +340,10 @@ const PIPELINE_STATUSES = [
 const CLOSED_STATUS = "Closed";
 
 /* ==========================================================================
-   RECENT CLOSED DEALS (LAST 7 DAYS)
+   1. LEADS CLOSED LAST WEEK (BAR CHART)
    ========================================================================== */
 
 const readRecentClosedDeals = async () => {
-  // UTC-safe date calculation
   const now = new Date();
 
   const sevenDaysAgo = new Date(
@@ -354,20 +357,50 @@ const readRecentClosedDeals = async () => {
     ),
   );
 
-  return await Lead.find({
-    status: CLOSED_STATUS,
-    closedAt: {
-      $exists: true,
-      $ne: null,
-      $gte: sevenDaysAgo,
+  return await Lead.aggregate([
+    {
+      $match: {
+        status: CLOSED_STATUS,
+
+        closedAt: {
+          $exists: true,
+          $ne: null,
+          $gte: sevenDaysAgo,
+        },
+      },
     },
-  })
-    .populate("salesAgent", "name email")
-    .select(
-      "name source salesAgent status closedAt priority createdAt updatedAt",
-    )
-    .sort({ closedAt: -1 })
-    .lean();
+
+    {
+      $group: {
+        _id: {
+          $dateToString: {
+            format: "%Y-%m-%d",
+            date: "$closedAt",
+          },
+        },
+
+        closedCount: {
+          $sum: 1,
+        },
+      },
+    },
+
+    {
+      $project: {
+        _id: 0,
+
+        date: "$_id",
+
+        closedCount: 1,
+      },
+    },
+
+    {
+      $sort: {
+        date: 1,
+      },
+    },
+  ]);
 };
 
 app.get("/report/last-week", async (req, res) => {
@@ -376,7 +409,10 @@ app.get("/report/last-week", async (req, res) => {
 
     res.status(200).json({
       success: true,
-      count: recentClosedLeads.length,
+      totalClosedLeads: recentClosedLeads.reduce(
+        (acc, curr) => acc + curr.closedCount,
+        0,
+      ),
       data: recentClosedLeads,
     });
   } catch (error) {
@@ -390,37 +426,7 @@ app.get("/report/last-week", async (req, res) => {
 });
 
 /* ==========================================================================
-   PIPELINE LEADS COUNT
-   ========================================================================== */
-
-const readLeadsInPipeline = async () => {
-  return await Lead.countDocuments({
-    status: {
-      $in: PIPELINE_STATUSES,
-    },
-  });
-};
-
-app.get("/report/pipeline", async (req, res) => {
-  try {
-    const totalLeadsInPipeline = await readLeadsInPipeline();
-
-    res.status(200).json({
-      success: true,
-      totalLeadsInPipeline,
-    });
-  } catch (error) {
-    console.error("Error fetching leads in pipeline:", error);
-
-    res.status(500).json({
-      success: false,
-      error: "An error occurred while fetching leads in pipeline.",
-    });
-  }
-});
-
-/* ==========================================================================
-   CLOSED LEADS BY AGENT
+   2. LEAD DISTRIBUTION BY SALES AGENT (PIE CHART)
    ========================================================================== */
 
 const readClosedLeadsByAgent = async () => {
@@ -434,6 +440,7 @@ const readClosedLeadsByAgent = async () => {
     {
       $group: {
         _id: "$salesAgent",
+
         closedLeadsCount: {
           $sum: 1,
         },
@@ -442,7 +449,7 @@ const readClosedLeadsByAgent = async () => {
 
     {
       $lookup: {
-        from: "salesagents", // VERIFY this collection name in MongoDB
+        from: "salesagents",
         localField: "_id",
         foreignField: "_id",
         as: "salesAgentDetails",
@@ -463,11 +470,7 @@ const readClosedLeadsByAgent = async () => {
         salesAgentId: "$_id",
 
         salesAgentName: {
-          $ifNull: ["$salesAgentDetails.name", "Unassigned / Deleted Agent"],
-        },
-
-        salesAgentEmail: {
-          $ifNull: ["$salesAgentDetails.email", null],
+          $ifNull: ["$salesAgentDetails.name", "Unassigned"],
         },
 
         closedLeadsCount: 1,
@@ -488,7 +491,7 @@ app.get("/report/closed-by-agent", async (req, res) => {
 
     res.status(200).json({
       success: true,
-      count: closedLeadsByAgent.length,
+      totalAgents: closedLeadsByAgent.length,
       data: closedLeadsByAgent,
     });
   } catch (error) {
@@ -501,6 +504,71 @@ app.get("/report/closed-by-agent", async (req, res) => {
   }
 });
 
+/* ==========================================================================
+   3. TOTAL LEADS IN PIPELINE (BAR CHART)
+   ========================================================================== */
+
+const readPipelineDistribution = async () => {
+  return await Lead.aggregate([
+    {
+      $match: {
+        status: {
+          $in: PIPELINE_STATUSES,
+        },
+      },
+    },
+
+    {
+      $group: {
+        _id: "$status",
+
+        totalLeads: {
+          $sum: 1,
+        },
+      },
+    },
+
+    {
+      $project: {
+        _id: 0,
+
+        status: "$_id",
+
+        totalLeads: 1,
+      },
+    },
+
+    {
+      $sort: {
+        totalLeads: -1,
+      },
+    },
+  ]);
+};
+
+app.get("/report/pipeline", async (req, res) => {
+  try {
+    const pipelineDistribution = await readPipelineDistribution();
+
+    const totalPipelineLeads = pipelineDistribution.reduce(
+      (acc, curr) => acc + curr.totalLeads,
+      0,
+    );
+
+    res.status(200).json({
+      success: true,
+      totalPipelineLeads,
+      data: pipelineDistribution,
+    });
+  } catch (error) {
+    console.error("Error fetching pipeline distribution:", error);
+
+    res.status(500).json({
+      success: false,
+      error: "An error occurred while fetching pipeline distribution.",
+    });
+  }
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log("Server is running on port", PORT);
