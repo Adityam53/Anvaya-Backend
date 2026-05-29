@@ -325,72 +325,158 @@ app.get("/tags", async (req, res) => {
   }
 });
 
+const PIPELINE_STATUSES = [
+  "New",
+  "Contacted",
+  "Qualified",
+  "Proposal Sent",
+  "Negotiation",
+];
+
+const CLOSED_STATUS = "Closed";
+
+/* ==========================================================================
+   RECENT CLOSED DEALS (LAST 7 DAYS)
+   ========================================================================== */
+
 const readRecentClosedDeals = async () => {
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  // UTC-safe date calculation
+  const now = new Date();
+
+  const sevenDaysAgo = new Date(
+    Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate() - 7,
+      0,
+      0,
+      0,
+    ),
+  );
 
   return await Lead.find({
-    status: "Closed",
-    closedAt: { $gte: sevenDaysAgo },
+    status: CLOSED_STATUS,
+    closedAt: {
+      $exists: true,
+      $ne: null,
+      $gte: sevenDaysAgo,
+    },
   })
     .populate("salesAgent", "name email")
-    .select("name source salesAgent status closedAt priority");
+    .select(
+      "name source salesAgent status closedAt priority createdAt updatedAt",
+    )
+    .sort({ closedAt: -1 })
+    .lean();
 };
 
 app.get("/report/last-week", async (req, res) => {
   try {
     const recentClosedLeads = await readRecentClosedDeals();
-    res.status(200).json(recentClosedLeads || []);
+
+    res.status(200).json({
+      success: true,
+      count: recentClosedLeads.length,
+      data: recentClosedLeads,
+    });
   } catch (error) {
     console.error("Error fetching recent closed leads:", error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while fetching recent closed leads." });
+
+    res.status(500).json({
+      success: false,
+      error: "An error occurred while fetching recent closed leads.",
+    });
   }
 });
 
+/* ==========================================================================
+   PIPELINE LEADS COUNT
+   ========================================================================== */
+
 const readLeadsInPipeline = async () => {
-  return await Lead.find({ status: { $ne: "Closed" } });
+  return await Lead.countDocuments({
+    status: {
+      $in: PIPELINE_STATUSES,
+    },
+  });
 };
 
 app.get("/report/pipeline", async (req, res) => {
   try {
     const totalLeadsInPipeline = await readLeadsInPipeline();
+
     res.status(200).json({
-      totalLeadsInPipeline: totalLeadsInPipeline.length,
+      success: true,
+      totalLeadsInPipeline,
     });
   } catch (error) {
-    console.error("Error fetching leads in pipeline", error);
-    res
-      .status(500)
-      .json({ error: "An error occurred while fetching leads in pipeline." });
+    console.error("Error fetching leads in pipeline:", error);
+
+    res.status(500).json({
+      success: false,
+      error: "An error occurred while fetching leads in pipeline.",
+    });
   }
 });
 
+/* ==========================================================================
+   CLOSED LEADS BY AGENT
+   ========================================================================== */
+
 const readClosedLeadsByAgent = async () => {
   return await Lead.aggregate([
-    { $match: { status: "Closed" } },
+    {
+      $match: {
+        status: CLOSED_STATUS,
+      },
+    },
+
     {
       $group: {
         _id: "$salesAgent",
-        closedLeadsCount: { $sum: 1 },
+        closedLeadsCount: {
+          $sum: 1,
+        },
       },
     },
+
     {
       $lookup: {
-        from: "salesagents", // Ensure this collection name perfectly matches your MongoDB collection (usually lowercase plural)
+        from: "salesagents", // VERIFY this collection name in MongoDB
         localField: "_id",
         foreignField: "_id",
         as: "salesAgentDetails",
       },
     },
-    { $unwind: "$salesAgentDetails" },
+
+    {
+      $unwind: {
+        path: "$salesAgentDetails",
+        preserveNullAndEmptyArrays: true,
+      },
+    },
+
     {
       $project: {
         _id: 0,
-        salesAgentId: "$salesAgentDetails._id",
-        salesAgentName: "$salesAgentDetails.name",
+
+        salesAgentId: "$_id",
+
+        salesAgentName: {
+          $ifNull: ["$salesAgentDetails.name", "Unassigned / Deleted Agent"],
+        },
+
+        salesAgentEmail: {
+          $ifNull: ["$salesAgentDetails.email", null],
+        },
+
         closedLeadsCount: 1,
+      },
+    },
+
+    {
+      $sort: {
+        closedLeadsCount: -1,
       },
     },
   ]);
@@ -399,10 +485,19 @@ const readClosedLeadsByAgent = async () => {
 app.get("/report/closed-by-agent", async (req, res) => {
   try {
     const closedLeadsByAgent = await readClosedLeadsByAgent();
-    res.status(200).json(closedLeadsByAgent);
+
+    res.status(200).json({
+      success: true,
+      count: closedLeadsByAgent.length,
+      data: closedLeadsByAgent,
+    });
   } catch (error) {
-    console.error("Error in fetching closed leads by agent", error);
-    res.status(500).json({ error: "Failed to fetch closed leads by agent" });
+    console.error("Error fetching closed leads by agent:", error);
+
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch closed leads by agent.",
+    });
   }
 });
 
