@@ -110,7 +110,7 @@ Built using:
 
 ```bash
 git clone <https://github.com/Adityam53/Anvaya-Backend.git>
-cd anvaya-crm-backend
+open integrated terminal
 ```
 
 ---
