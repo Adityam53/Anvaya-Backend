@@ -5,6 +5,16 @@ const tagSchema = new mongoose.Schema({
     type: String,
     required: [true, "Tag name is required"],
     unique: true,
+    enum: [
+      "Hot Lead",
+      "Warm Lead",
+      "Cold Lead",
+      "Re-engage",
+      "Not Interested",
+      "Call Scheduled",
+      "Tag-1780469753001",
+      "Tag-1780489653088",
+    ],
   },
   createdAt: {
     type: Date,
